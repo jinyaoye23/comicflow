@@ -164,7 +164,7 @@ export async function createVideoTask(
     if (options?.mode) payload.mode = options.mode;
   }
 
-  const res = await client.post('/v1/videos', payload);
+  const res = await client.post('/videos', payload);
   const taskId = res.data?.id;
   if (!taskId) throw new Error('No task_id returned from video API');
   return taskId;
@@ -182,7 +182,7 @@ export async function pollVideoTask(
   let lastStatus: VideoTaskStatus | null = null;
 
   while (Date.now() < deadline) {
-    const res = await client.get(`/v1/videos/${taskId}`);
+    const res = await client.get(`/videos/${taskId}`);
     const data = res.data as VideoTaskStatus;
     lastStatus = data;
 

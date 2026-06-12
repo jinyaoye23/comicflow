@@ -26,6 +26,7 @@ model Project {
   title      String
   genre      String?
   style      String?     // 漫画风格：日系/美漫/水墨/赛博等
+  idea       String?     // 用户输入的原始创意文本
   script     String?     // JSON string — 结构化脚本
   status     String      @default("DRAFT") // DRAFT | GENERATING | COMPLETED | FAILED
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)

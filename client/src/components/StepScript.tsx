@@ -10,7 +10,7 @@ interface Props {
 
 export function StepScript({ project, onScriptReady }: Props) {
   const queryClient = useQueryClient();
-  const [idea, setIdea] = useState('');
+  const [idea, setIdea] = useState(project.idea || '');
   const [error, setError] = useState<string | null>(null);
 
   const genMutation = useMutation({

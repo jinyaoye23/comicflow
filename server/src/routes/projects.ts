@@ -116,10 +116,11 @@ router.post('/:id/script/generate', async (req: Request, res: Response) => {
 
     const script = JSON.parse(clean);
 
-    // Save script to project
+    // Save script + original idea to project
     const updated = await prisma.project.update({
       where: { id: req.params.id },
       data: {
+        idea: idea || project.idea,  // 保存用户原始创意，覆盖或保留
         script: JSON.stringify(script),
         genre: script.genre || project.genre,
         style: script.style || project.style,

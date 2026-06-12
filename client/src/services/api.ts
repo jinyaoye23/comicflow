@@ -13,6 +13,7 @@ export interface Project {
   title: string;
   genre?: string;
   style?: string;
+  idea?: string;        // 用户原始创意文本
   script?: string;
   status: string;
   characters: Character[];

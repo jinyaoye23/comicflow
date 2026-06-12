@@ -114,13 +114,13 @@ async function compressImageBase64(base64: string): Promise<string> {
   const buf = Buffer.from(base64, 'base64');
   const img = await Jimp.read(buf);
   
-  // 缩小到 512px 宽（视频输出是 768x1024，512 足够）
-  if (img.width > 512) {
-    img.resize({ w: 512 });
+  // 缩小到 384px 宽，更激进压缩（视频 API 对分辨率不敏感）
+  if (img.width > 384) {
+    img.resize({ w: 384 });
   }
   
-  // 转 JPEG quality 60，大幅减小体积
-  const jpgBuf = await img.getBuffer('image/jpeg', { quality: 60 });
+  // JPEG quality 40 — 极限压缩，优先保证请求能发出去
+  const jpgBuf = await img.getBuffer('image/jpeg', { quality: 40 });
   return jpgBuf.toString('base64');
 }
 
@@ -164,7 +164,15 @@ export async function createVideoTask(
     if (options?.mode) payload.mode = options.mode;
   }
 
-  const res = await client.post('/v1/videos', payload);
+  // Log payload size before sending
+  const payloadStr = JSON.stringify(payload);
+  console.log(`📤 Sending video request: ${(payloadStr.length / 1024).toFixed(0)} KB body`);
+
+  const res = await client.post('/v1/videos', payload, {
+    timeout: 600_000, // 10 min — 创建任务可能很慢
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  });
   const taskId = res.data?.id;
   if (!taskId) throw new Error('No task_id returned from video API');
   return taskId;

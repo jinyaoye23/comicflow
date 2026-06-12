@@ -119,27 +119,19 @@ export async function exportProjectVideo(projectId: string) {
 
 // === Video ===
 export interface VideoGenerateResult {
-  videos: (Panel & { error?: string; failed?: boolean })[];
-}
-
-export interface VideoConcatResult {
   videoPath: string;
   panelCount: number;
+  videoUrl?: string;
 }
 
 export interface VideoStatus {
-  videos: { panelId: string; index: number; videoPath: string }[];
-  hasCombined: boolean;
-  combinedPath: string | null;
+  hasVideo: boolean;
+  videoPath: string | null;
+  status: string;
 }
 
-export async function generateVideos(projectId: string, panelIds?: string[]) {
+export async function generateVideo(projectId: string, panelIds?: string[]) {
   const res = await api.post<VideoGenerateResult>(`/projects/${projectId}/video/generate`, { panelIds });
-  return res.data;
-}
-
-export async function concatVideos(projectId: string) {
-  const res = await api.post<VideoConcatResult>(`/projects/${projectId}/video/concat`);
   return res.data;
 }
 

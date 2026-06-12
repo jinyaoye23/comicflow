@@ -94,19 +94,125 @@ export async function imgToImg(prompt: string, referenceDataUrl: string): Promis
   throw new Error('No image URL or base64 in response');
 }
 
-// ====== Video Generation (视频片段) ======
-export async function generateVideo(imageDataUrl: string, prompt?: string): Promise<string> {
+// ====== Video Generation (Agnes Video V2.0) ======
+
+export interface VideoTaskStatus {
+  id: string;
+  status: 'queued' | 'in_progress' | 'completed' | 'failed';
+  progress?: number;
+  video_url?: string;
+  url?: string;
+  error?: string;
+}
+
+/**
+ * 创建视频生成任务（单图/多图均支持）
+ * @param images - 图片 base64 数组（不含 data:image 前缀）
+ * @param prompt - 视频描述（英文效果更好）
+ * @param options - 可选参数
+ */
+export async function createVideoTask(
+  images: string[],
+  prompt: string,
+  options?: {
+    width?: number;
+    height?: number;
+    num_frames?: number;
+    frame_rate?: number;
+    mode?: 'ti2vid' | 'keyframes';
+  }
+): Promise<string> {
+  const payload: any = {
+    model: 'agnes-video-v2.0',
+    prompt,
+    width: options?.width ?? 768,
+    height: options?.height ?? 1024,
+    num_frames: options?.num_frames ?? 81, // 81 frames ≈ 3.4s @ 24fps
+    frame_rate: options?.frame_rate ?? 24,
+  };
+
+  // 单图 → 顶层 image 字段；多图 → extra_body.image 数组
+  if (images.length === 1) {
+    payload.image = images[0];
+  } else {
+    payload.extra_body = { image: images };
+    if (options?.mode) payload.mode = options.mode;
+  }
+
+  const res = await client.post('/v1/videos', payload);
+  const taskId = res.data?.id;
+  if (!taskId) throw new Error('No task_id returned from video API');
+  return taskId;
+}
+
+/**
+ * 轮询视频任务状态，直到完成或失败
+ */
+export async function pollVideoTask(
+  taskId: string,
+  onProgress?: (status: VideoTaskStatus) => void,
+  timeoutMs: number = 300_000 // 5 min
+): Promise<VideoTaskStatus> {
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus: VideoTaskStatus | null = null;
+
+  while (Date.now() < deadline) {
+    const res = await client.get(`/v1/videos/${taskId}`);
+    const data = res.data as VideoTaskStatus;
+    lastStatus = data;
+
+    const status = data.status;
+    if (onProgress) onProgress(data);
+
+    if (status === 'completed') return data;
+    if (status === 'failed') throw new Error(data.error || 'Video task failed');
+
+    // queued / in_progress → 等待 8 秒后重试
+    await new Promise((r) => setTimeout(r, 8000));
+  }
+
+  throw new Error(`Video task ${taskId} timed out after ${timeoutMs}ms`);
+}
+
+/**
+ * 高级封装：单图生成视频（创建任务 + 轮询 + 返回视频 URL）
+ */
+export async function generateVideo(
+  imageDataUrl: string,
+  prompt?: string,
+  onProgress?: (status: VideoTaskStatus) => void
+): Promise<string> {
   const b64 = imageDataUrl.replace(/^data:image\/\w+;base64,/, '');
+  const taskId = await createVideoTask([b64], prompt || 'smooth camera movement, cinematic');
+  const result = await pollVideoTask(taskId, onProgress);
+  const videoUrl = result.video_url || result.url || '';
+  if (!videoUrl) throw new Error('No video URL in completed task');
+  return videoUrl;
+}
 
-  const res = await client.post('/video/generations', {
-    model: 'agnes-video-2.0',
-    image: b64,
-    prompt: prompt || 'smooth camera movement, cinematic',
-    duration: 4,
+/**
+ * 多图生成视频（多张分镜图 → 一段完整视频）
+ * 这是 ComicFlow 的核心方法：直接把 N 张分镜图发给 Agnes，生成过渡视频
+ */
+export async function generateVideoFromImages(
+  imageDataUrls: string[],
+  prompt: string,
+  onProgress?: (status: VideoTaskStatus) => void,
+  options?: {
+    width?: number;
+    height?: number;
+    num_frames?: number;
+  }
+): Promise<string> {
+  const images = imageDataUrls.map((url) => url.replace(/^data:image\/\w+;base64,/, ''));
+  const taskId = await createVideoTask(images, prompt, {
+    width: options?.width ?? 768,
+    height: options?.height ?? 1024,
+    num_frames: options?.num_frames ?? 121, // 多图用更长的视频
   });
-
-  const item = res.data?.data?.[0];
-  if (!item) throw new Error('No video data returned');
-
-  return item.url || '';
+  console.log(`🎬 Video task created: ${taskId}`);
+  const result = await pollVideoTask(taskId, onProgress);
+  const videoUrl = result.video_url || result.url || '';
+  if (!videoUrl) throw new Error('No video URL in completed task');
+  return videoUrl;
 }

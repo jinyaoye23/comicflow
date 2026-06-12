@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const AGNES_BASE = process.env.AGNES_BASE_URL || 'https://apihub.agnes-ai.com/v1';
+const AGNES_BASE = process.env.AGNES_BASE_URL || 'https://apihub.agnes-ai.com/';
 const AGNES_KEY = process.env.AGNES_API_KEY || '';
 
 const client = axios.create({
@@ -18,7 +18,7 @@ export async function chatCompletion(prompt: string, systemPrompt?: string) {
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   messages.push({ role: 'user', content: prompt });
 
-  const res = await client.post('/chat/completions', {
+  const res = await client.post('/v1/chat/completions', {
     model: 'agnes-2.0-flash',
     messages,
     temperature: 0.8,
@@ -31,7 +31,7 @@ export async function chatCompletion(prompt: string, systemPrompt?: string) {
 // ====== Image Generation (角色参考图 + 分镜图) ======
 export async function generateImage(prompt: string): Promise<string> {
   // Try text-to-image first
-  const res = await client.post('/images/generations', {
+  const res = await client.post('/v1/images/generations', {
     model: 'agnes-image-2.1-flash',
     prompt,
     n: 1,
@@ -65,7 +65,7 @@ export async function imgToImg(prompt: string, referenceDataUrl: string): Promis
   // Extract base64 from data URL
   const b64 = referenceDataUrl.replace(/^data:image\/\w+;base64,/, '');
 
-  const res = await client.post('/images/generations', {
+  const res = await client.post('/v1/images/generations', {
     model: 'agnes-image-2.0-flash',
     prompt,
     n: 1,
@@ -164,7 +164,7 @@ export async function createVideoTask(
     if (options?.mode) payload.mode = options.mode;
   }
 
-  const res = await client.post('/videos', payload);
+  const res = await client.post('/v1/videos', payload);
   const taskId = res.data?.id;
   if (!taskId) throw new Error('No task_id returned from video API');
   return taskId;
@@ -182,7 +182,7 @@ export async function pollVideoTask(
   let lastStatus: VideoTaskStatus | null = null;
 
   while (Date.now() < deadline) {
-    const res = await client.get(`/videos/${taskId}`);
+    const res = await client.get(`/v1/videos/${taskId}`);
     const data = res.data as VideoTaskStatus;
     lastStatus = data;
 

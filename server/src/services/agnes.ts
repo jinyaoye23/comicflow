@@ -166,7 +166,7 @@ export async function createVideoTask(
 
   // Log payload size before sending
   const payloadStr = JSON.stringify(payload);
-  console.log(`📤 Sending video request: ${(payloadStr.length / 1024).toFixed(0)} KB body`);
+  console.log(`📤 [v4.1] Sending video request: ${(payloadStr.length / 1024).toFixed(0)} KB body, timeout=600s`);
 
   const res = await client.post('/v1/videos', payload, {
     timeout: 600_000, // 10 min — 创建任务可能很慢

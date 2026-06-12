@@ -436,7 +436,7 @@ router.post('/:id/video/generate', async (req: Request, res: Response) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     const panelIds: string[] = req.body.panelIds || project.panels.map((p) => p.id);
-    const panels = project.panels.filter((p) => panelIds.includes(p.id) && p.imagePath).slice(0, 3); // 限制 3 张图，避免超时
+    const panels = project.panels.filter((p) => panelIds.includes(p.id) && p.imagePath).slice(0, 1); // 先 1 张图验证 API 通，稳定后再扩展
 
     if (panels.length === 0) return res.status(400).json({ error: 'No panels with images to generate video' });
 
@@ -457,7 +457,7 @@ router.post('/:id/video/generate', async (req: Request, res: Response) => {
       Natural camera movements, cinematic transitions between panels, 
       subtle parallax and zoom effects, 24fps, high quality.`;
 
-    console.log(`🎬 Generating video for project ${req.params.id} with ${images.length} panels...`);
+    console.log(`🎬 [v4.1] Generating video for project ${req.params.id} with ${images.length} panels...`);
 
     const { generateVideoFromImages, VideoTaskStatus } = await import('../services/agnes');
 

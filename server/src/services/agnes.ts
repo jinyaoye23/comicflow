@@ -106,6 +106,25 @@ export interface VideoTaskStatus {
 }
 
 /**
+ * 压缩图片 base64 数据：缩小分辨率 + 转 JPEG，降低视频 API 请求体积
+ * 目标：每张 < 150KB（base64），避免多图时超过 API body size 限制
+ */
+async function compressImageBase64(base64: string): Promise<string> {
+  const { Jimp } = await import('jimp');
+  const buf = Buffer.from(base64, 'base64');
+  const img = await Jimp.read(buf);
+  
+  // 缩小到 512px 宽（视频输出是 768x1024，512 足够）
+  if (img.width > 512) {
+    img.resize({ w: 512 });
+  }
+  
+  // 转 JPEG quality 60，大幅减小体积
+  const jpgBuf = await img.getBuffer('image/jpeg', { quality: 60 });
+  return jpgBuf.toString('base64');
+}
+
+/**
  * 创建视频生成任务（单图/多图均支持）
  * @param images - 图片 base64 数组（不含 data:image 前缀）
  * @param prompt - 视频描述（英文效果更好）
@@ -135,7 +154,13 @@ export async function createVideoTask(
   if (images.length === 1) {
     payload.image = images[0];
   } else {
-    payload.extra_body = { image: images };
+    // 多图时压缩每张图片，防止 body size 超标（API 约 5MB 上限）
+    console.log(`📐 Compressing ${images.length} images for video...`);
+    const compressed = await Promise.all(images.map((b64) => compressImageBase64(b64)));
+    const totalKB = (compressed.reduce((s, c) => s + c.length, 0) / 1024).toFixed(0);
+    console.log(`📐 Compressed: ${totalKB} KB total base64`);
+    
+    payload.extra_body = { image: compressed };
     if (options?.mode) payload.mode = options.mode;
   }
 

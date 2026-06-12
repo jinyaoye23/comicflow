@@ -425,4 +425,165 @@ router.put('/:id/panels/:panelId', async (req: Request, res: Response) => {
   }
 });
 
+// ====== 运镜 prompt 映射 ======
+const CAMERA_VIDEO_PROMPTS: Record<string, string> = {
+  '远景': 'slow zoom out, wide establishing landscape shot, cinematic smooth camera',
+  '中景': 'gentle horizontal pan, medium shot, subtle parallax, cinematic',
+  '特写': 'slow dramatic zoom in, close-up detail, intense emotional focus, cinematic',
+  '全景': 'slow panoramic sweep, wide angle establishing shot, cinematic smooth',
+  '仰视': 'slow upward tilt, low angle heroic perspective, dramatic, cinematic',
+  '俯视': 'slow downward tilt, high angle bird eye view, revealing shot, cinematic',
+};
+
+function getVideoPrompt(panel: any): string {
+  const base = CAMERA_VIDEO_PROMPTS[panel.camera || ''] || 'gentle camera movement, smooth, cinematic';
+  const extra = panel.action ? `, ${panel.action.slice(0, 50)}` : '';
+  return base + extra;
+}
+
+// ====== POST /api/projects/:id/video/generate — 逐格生成视频 ======
+router.post('/:id/video/generate', async (req: Request, res: Response) => {
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: req.params.id },
+      include: { panels: { orderBy: { index: 'asc' } } },
+    });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const panelIds: string[] = req.body.panelIds || project.panels.map((p) => p.id);
+    const panels = project.panels.filter((p) => panelIds.includes(p.id) && p.imagePath);
+
+    if (panels.length === 0) return res.status(400).json({ error: 'No panels with images to generate video' });
+
+    await prisma.project.update({ where: { id: req.params.id }, data: { status: 'GENERATING' } });
+
+    const { generateVideo } = await import('../services/agnes');
+    const axios = (await import('axios')).default;
+    const videosDir = path.resolve(__dirname, '../../uploads/videos');
+    fs.mkdirSync(videosDir, { recursive: true });
+
+    const results: any[] = [];
+
+    for (const panel of panels) {
+      try {
+        const imgPath = path.resolve(__dirname, '..', '..', panel.imagePath!.replace(/^\//, ''));
+        if (!fs.existsSync(imgPath)) {
+          results.push({ ...panel, videoPath: null, error: 'Image file not found', failed: true });
+          continue;
+        }
+
+        const imgB64 = fs.readFileSync(imgPath, 'base64');
+        const imageDataUrl = `data:image/png;base64,${imgB64}`;
+        const prompt = getVideoPrompt(panel);
+
+        // Call Agnes video API
+        const videoUrl = await generateVideo(imageDataUrl, prompt);
+
+        // Download video from Agnes URL
+        const videoResp = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 120_000 });
+        const fileName = `${panel.id}.mp4`;
+        const filePath = path.join(videosDir, fileName);
+        fs.writeFileSync(filePath, Buffer.from(videoResp.data));
+
+        const videoPath = `/uploads/videos/${fileName}`;
+        await prisma.panel.update({
+          where: { id: panel.id },
+          data: { videoPath, prompt: panel.prompt || prompt },
+        });
+
+        results.push({ ...panel, videoPath, prompt });
+      } catch (panelErr: any) {
+        const msg = panelErr.response?.data?.error || panelErr.message;
+        console.error(`❌ Video generation failed for panel ${panel.index}:`, msg);
+        results.push({ ...panel, videoPath: null, error: msg, failed: true });
+      }
+    }
+
+    await prisma.project.update({ where: { id: req.params.id }, data: { status: 'COMPLETED' } });
+
+    res.json({ videos: results });
+  } catch (err: any) {
+    console.error('Video generation error:', err);
+    await prisma.project.update({ where: { id: req.params.id }, data: { status: 'FAILED' } });
+    res.status(500).json({ error: 'Video generation failed', message: err.message });
+  }
+});
+
+// ====== POST /api/projects/:id/video/concat — FFmpeg 拼接所有片段 ======
+router.post('/:id/video/concat', async (req: Request, res: Response) => {
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: req.params.id },
+      include: { panels: { orderBy: { index: 'asc' } } },
+    });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const videoPanels = project.panels.filter((p) => p.videoPath);
+    if (videoPanels.length === 0) return res.status(400).json({ error: 'No video clips to concatenate' });
+
+    const videosDir = path.resolve(__dirname, '../../uploads/videos');
+    const concatFile = path.join(videosDir, `${req.params.id}_concat.txt`);
+    const outputFile = path.join(videosDir, `${req.params.id}_combined.mp4`);
+
+    // Build FFmpeg concat file list
+    const fileList = videoPanels.map((p) => {
+      const absPath = path.resolve(__dirname, '..', '..', p.videoPath!.replace(/^\//, ''));
+      // FFmpeg concat requires forward slashes on Windows
+      return `file '${absPath.replace(/\\/g, '/')}'`;
+    }).join('\n');
+    fs.writeFileSync(concatFile, fileList);
+
+    // Run FFmpeg concat
+    const ffmpeg = (await import('fluent-ffmpeg')).default;
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(concatFile)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .outputOptions(['-c', 'copy'])
+        .output(outputFile)
+        .on('end', () => resolve())
+        .on('error', (err: Error) => reject(err))
+        .run();
+    });
+
+    // Clean up concat file
+    fs.unlinkSync(concatFile);
+
+    const outputPath = `/uploads/videos/${req.params.id}_combined.mp4`;
+
+    await prisma.project.update({
+      where: { id: req.params.id },
+      data: { status: 'COMPLETED' },
+    });
+
+    res.json({ videoPath: outputPath, panelCount: videoPanels.length });
+  } catch (err: any) {
+    console.error('Video concat error:', err);
+    res.status(500).json({ error: 'Video concatenation failed', message: err.message });
+  }
+});
+
+// ====== GET /api/projects/:id/video — 检查视频状态 ======
+router.get('/:id/video', async (req: Request, res: Response) => {
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: req.params.id },
+      include: { panels: { orderBy: { index: 'asc' } } },
+    });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const videos = project.panels
+      .filter((p) => p.videoPath)
+      .map((p) => ({ panelId: p.id, index: p.index, videoPath: p.videoPath }));
+
+    const combinedPath = `/uploads/videos/${req.params.id}_combined.mp4`;
+    const hasCombined = fs.existsSync(path.resolve(__dirname, '../../', combinedPath));
+
+    res.json({ videos, hasCombined, combinedPath: hasCombined ? combinedPath : null });
+  } catch (err) {
+    console.error('Get video status error:', err);
+    res.status(500).json({ error: 'Failed to get video status' });
+  }
+});
+
 export default router;

@@ -1,0 +1,21 @@
+{
+  "name": "comicflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI 驱动漫画一条龙创作平台",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm -w server run dev",
+    "dev:client": "npm -w client run dev",
+    "db:migrate": "npm -w server run db:migrate",
+    "db:seed": "npm -w server run db:seed",
+    "db:studio": "npm -w server run db:studio"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

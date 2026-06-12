@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @default("")    // Phase 1: empty, no auth
+  name         String?
+  tier         String    @default("FREE")  // FREE | PRO | STUDIO
+  credits      Int       @default(10)
+  refreshToken String?
+  projects     Project[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Project {
+  id         String      @id @default(uuid())
+  userId     String
+  title      String
+  genre      String?
+  style      String?     // 漫画风格：日系/美漫/水墨/赛博等
+  script     String?     // JSON string — 结构化脚本
+  status     String      @default("DRAFT") // DRAFT | GENERATING | COMPLETED | FAILED
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  characters Character[]
+  panels     Panel[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+model Character {
+  id          String   @id @default(uuid())
+  projectId   String
+  name        String
+  description String   @default("")
+  imagePath   String?  // 本地文件路径或 URL，Phase 1 存本地路径
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+}
+
+model Panel {
+  id        String   @id @default(uuid())
+  projectId String
+  index     Int
+  scene     String?  // 场景描述
+  action    String?  // 动作描述
+  dialogue  String?  // 台词
+  camera    String?  // 镜头角度
+  prompt    String?  // 拼接后的完整生成 prompt
+  imagePath String?  // 生成的图片本地路径
+  videoPath String?  // 生成的视频本地路径
+  charIds   String?  // JSON array — 绑定的角色 ID 列表
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, index])
+}

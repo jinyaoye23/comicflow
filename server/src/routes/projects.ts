@@ -468,7 +468,7 @@ router.post('/:id/video/generate', async (req: Request, res: Response) => {
       (status: any) => {
         console.log(`🎬 Video task: status=${status.status} progress=${status.progress || 0}`);
       },
-      { num_frames: Math.min(81 * panels.length, 441) } // 每格约 3 秒，最多 441 帧
+      { num_frames: 81 } // 先固定 81 帧（~3.4s），稳定后再根据 panel 数调整
     );
 
     console.log(`✅ Video generated: ${videoUrl}`);

@@ -5,7 +5,7 @@ const AGNES_KEY = process.env.AGNES_API_KEY || '';
 
 const client = axios.create({
   baseURL: AGNES_BASE,
-  timeout: 120_000,
+  timeout: 300_000, // 视频 API 请求体大、服务端处理慢，需更长超时
   headers: {
     'Authorization': `Bearer ${AGNES_KEY}`,
     'Content-Type': 'application/json',

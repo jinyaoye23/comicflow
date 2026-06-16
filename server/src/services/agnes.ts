@@ -3,7 +3,7 @@ import axios from 'axios';
 const AGNES_BASE = process.env.AGNES_BASE_URL || 'https://apihub.agnes-ai.com/';
 const AGNES_KEY = process.env.AGNES_API_KEY || '';
 
-const client = axios.create({
+export const client = axios.create({
   baseURL: AGNES_BASE,
   timeout: 300_000, // 视频 API 请求体大、服务端处理慢，需更长超时
   headers: {
@@ -98,11 +98,18 @@ export async function imgToImg(prompt: string, referenceDataUrl: string): Promis
 
 export interface VideoTaskStatus {
   id: string;
+  video_id?: string;
   status: 'queued' | 'in_progress' | 'completed' | 'failed';
   progress?: number;
   video_url?: string;
   url?: string;
+  remixed_from_video_id?: string; // 官方文档的字段名
   error?: string;
+}
+
+export interface CreateVideoResult {
+  taskId: string;
+  videoId: string;
 }
 
 /**
@@ -125,8 +132,23 @@ async function compressImageBase64(base64: string): Promise<string> {
 }
 
 /**
- * 创建视频生成任务（单图/多图均支持）
- * @param images - 图片 base64 数组（不含 data:image 前缀）
+ * 提取原始 base64（去除 data:image 前缀或直接返回）
+ */
+function extractBase64(input: string): { base64: string; mime: string } {
+  const match = input.match(/^data:(image\/\w+);base64,(.+)$/);
+  if (match) return { base64: match[2], mime: match[1] };
+  // 无前缀时默认当作 PNG base64
+  return { base64: input, mime: 'image/png' };
+}
+
+/**
+ * 创建视频生成任务（支持文生视频 + 图生视频）
+ * 
+ * 【文生视频】images 传空数组 []（不传 image 参数）
+ * 【图生视频】images 传 1 个 data URL（已验证可用）
+ * 【多图生视频】images 传多个 data URL（Agnes API 上暂不可用，全部超时）
+ * 
+ * @param images - 图片 data URL 数组（空数组 = 纯文生视频）
  * @param prompt - 视频描述（英文效果更好）
  * @param options - 可选参数
  */
@@ -140,56 +162,71 @@ export async function createVideoTask(
     frame_rate?: number;
     mode?: 'ti2vid' | 'keyframes';
   }
-): Promise<string> {
+): Promise<CreateVideoResult> {
+  const isTextToVideo = images.length === 0;
+
   const payload: any = {
     model: 'agnes-video-v2.0',
     prompt,
     width: options?.width ?? 768,
     height: options?.height ?? 1024,
-    num_frames: options?.num_frames ?? 81, // 81 frames ≈ 3.4s @ 24fps
+    num_frames: options?.num_frames ?? 81,
     frame_rate: options?.frame_rate ?? 24,
   };
 
-  // 单图 → 顶层 image 字段；多图 → extra_body.image 数组
-  if (images.length === 1) {
-    payload.image = images[0];
+  if (isTextToVideo) {
+    console.log(`📤 [v7] Text-to-video mode (no image)`);
+  } else if (images.length === 1) {
+    // 单图 → 顶层 image 字段（data URL）
+    const { base64, mime } = extractBase64(images[0]);
+    payload.image = `data:${mime};base64,${base64}`;
+    console.log(`📤 [v7] Single image mode, MIME: ${mime}`);
   } else {
-    // 多图时压缩每张图片，防止 body size 超标（API 约 5MB 上限）
-    console.log(`📐 Compressing ${images.length} images for video...`);
-    const compressed = await Promise.all(images.map((b64) => compressImageBase64(b64)));
-    const totalKB = (compressed.reduce((s, c) => s + c.length, 0) / 1024).toFixed(0);
-    console.log(`📐 Compressed: ${totalKB} KB total base64`);
-    
-    payload.extra_body = { image: compressed };
-    if (options?.mode) payload.mode = options.mode;
+    // 多图（暂不可用，但保留逻辑）
+    console.log(`📐 [v7] Compressing ${images.length} images for video...`);
+    const dataUrls = await Promise.all(
+      images.map(async (img) => {
+        const { base64 } = extractBase64(img);
+        const compressed = await compressImageBase64(base64);
+        return `data:image/jpeg;base64,${compressed}`;
+      })
+    );
+    payload.extra_body = { image: dataUrls };
+    if (options?.mode) payload.extra_body.mode = options.mode;
   }
 
-  // Log payload size before sending
   const payloadStr = JSON.stringify(payload);
-  console.log(`📤 [v4.1] Sending video request: ${(payloadStr.length / 1024).toFixed(0)} KB body, timeout=600s`);
+  const mode = isTextToVideo ? 'text-to-video' : `${images.length}-image`;
+  console.log(`📤 [v7] Sending ${mode} request: ${(payloadStr.length / 1024).toFixed(0)} KB body`);
 
   const res = await client.post('/v1/videos', payload, {
-    timeout: 600_000, // 10 min — 创建任务可能很慢
+    timeout: 600_000,
     maxBodyLength: Infinity,
     maxContentLength: Infinity,
   });
+
   const taskId = res.data?.id;
+  const videoId = res.data?.video_id;
   if (!taskId) throw new Error('No task_id returned from video API');
-  return taskId;
+  
+  console.log(`✅ [v7] Video task created: taskId=${taskId}, videoId=${videoId}`);
+  return { taskId, videoId: videoId || taskId };
 }
 
 /**
  * 轮询视频任务状态，直到完成或失败
+ * 使用官方推荐的 video_id 查询接口
  */
 export async function pollVideoTask(
   taskId: string,
   onProgress?: (status: VideoTaskStatus) => void,
-  timeoutMs: number = 300_000 // 5 min
+  timeoutMs: number = 600_000 // 10 min — 视频生成很慢
 ): Promise<VideoTaskStatus> {
   const deadline = Date.now() + timeoutMs;
   let lastStatus: VideoTaskStatus | null = null;
 
   while (Date.now() < deadline) {
+    // 使用官方推荐的 video_id 查询接口
     const res = await client.get(`/v1/videos/${taskId}`);
     const data = res.data as VideoTaskStatus;
     lastStatus = data;
@@ -197,7 +234,11 @@ export async function pollVideoTask(
     const status = data.status;
     if (onProgress) onProgress(data);
 
-    if (status === 'completed') return data;
+    if (status === 'completed') {
+      // 提取视频 URL：官方字段 remixed_from_video_id，兼容 video_url / url
+      console.log(`✅ [v5] Video completed: ${data.remixed_from_video_id || data.video_url || data.url}`);
+      return data;
+    }
     if (status === 'failed') throw new Error(data.error || 'Video task failed');
 
     // queued / in_progress → 等待 8 秒后重试
@@ -215,10 +256,10 @@ export async function generateVideo(
   prompt?: string,
   onProgress?: (status: VideoTaskStatus) => void
 ): Promise<string> {
-  const b64 = imageDataUrl.replace(/^data:image\/\w+;base64,/, '');
-  const taskId = await createVideoTask([b64], prompt || 'smooth camera movement, cinematic');
+  const { taskId } = await createVideoTask([imageDataUrl], prompt || 'smooth camera movement, cinematic');
+  console.log(`🎬 [v5] Single-image video task: ${taskId}`);
   const result = await pollVideoTask(taskId, onProgress);
-  const videoUrl = result.video_url || result.url || '';
+  const videoUrl = result.remixed_from_video_id || result.video_url || result.url || '';
   if (!videoUrl) throw new Error('No video URL in completed task');
   return videoUrl;
 }
@@ -237,15 +278,14 @@ export async function generateVideoFromImages(
     num_frames?: number;
   }
 ): Promise<string> {
-  const images = imageDataUrls.map((url) => url.replace(/^data:image\/\w+;base64,/, ''));
-  const taskId = await createVideoTask(images, prompt, {
+  const { taskId } = await createVideoTask(imageDataUrls, prompt, {
     width: options?.width ?? 768,
     height: options?.height ?? 1024,
     num_frames: options?.num_frames ?? 121, // 多图用更长的视频
   });
-  console.log(`🎬 Video task created: ${taskId}`);
+  console.log(`🎬 [v5] Multi-image video task: ${taskId}`);
   const result = await pollVideoTask(taskId, onProgress);
-  const videoUrl = result.video_url || result.url || '';
+  const videoUrl = result.remixed_from_video_id || result.video_url || result.url || '';
   if (!videoUrl) throw new Error('No video URL in completed task');
   return videoUrl;
 }

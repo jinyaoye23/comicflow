@@ -13,9 +13,11 @@ export interface Project {
   title: string;
   genre?: string;
   style?: string;
+  scriptType: string;   // 'COMIC' | 'VIDEO'
   idea?: string;        // 用户原始创意文本
   script?: string;
   status: string;
+  videoTaskId?: string | null;  // Agnes 视频任务 ID
   characters: Character[];
   panels: Panel[];
   createdAt: string;
@@ -38,14 +40,20 @@ export interface Panel {
   action?: string;
   dialogue?: string;
   camera?: string;
+  subtitle?: string;
+  innerThought?: string;
+  emotion?: string;
+  soundEffect?: string;
   prompt?: string;
   imagePath?: string;
   videoPath?: string;
   charIds?: string; // JSON array string
+  failed?: boolean;  // 批量生成时标记失败（后端返回，非 DB 字段）
+  error?: string;    // 失败原因
 }
 
 // === Projects ===
-export async function createProject(data: { title: string; genre?: string; style?: string }) {
+export async function createProject(data: { title: string; genre?: string; style?: string; scriptType?: string }) {
   const res = await api.post<Project>('/projects', data);
   return res.data;
 }
@@ -65,8 +73,8 @@ export async function deleteProject(id: string) {
 }
 
 // === Script ===
-export async function generateScript(projectId: string, idea: string) {
-  const res = await api.post<{ script: string }>(`/projects/${projectId}/script/generate`, { idea });
+export async function generateScript(projectId: string, idea: string, scriptType?: string) {
+  const res = await api.post<{ script: string; scriptType: string }>(`/projects/${projectId}/script/generate`, { idea, scriptType });
   return res.data;
 }
 
@@ -119,15 +127,22 @@ export async function exportProjectVideo(projectId: string) {
 
 // === Video ===
 export interface VideoGenerateResult {
-  videoPath: string;
-  panelCount: number;
-  videoUrl?: string;
+  taskId: string;
+  status: string;
+  mode: string;
+  scriptType: string;
+  message: string;
 }
 
 export interface VideoStatus {
   hasVideo: boolean;
   videoPath: string | null;
-  status: string;
+  status: string;                 // DRAFT | GENERATING | COMPLETED | FAILED
+  videoTaskId: string | null;
+  videoPrompt: string | null;     // 生成时使用的 prompt（用于前端展示和调试）
+  agnesStatus: string | null;     // queued | in_progress | completed | failed
+  agnesProgress: number | null;   // 0-100
+  message: string;
 }
 
 export async function generateVideo(projectId: string, panelIds?: string[]) {
@@ -137,6 +152,11 @@ export async function generateVideo(projectId: string, panelIds?: string[]) {
 
 export async function getVideoStatus(projectId: string) {
   const res = await api.get<VideoStatus>(`/projects/${projectId}/video`);
+  return res.data;
+}
+
+export async function resetVideoTask(projectId: string) {
+  const res = await api.delete<{ ok: boolean }>(`/projects/${projectId}/video/task`);
   return res.data;
 }
 

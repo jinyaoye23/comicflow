@@ -17,6 +17,16 @@ export default {
           900: '#1e1b4b',
         },
       },
+      keyframes: {
+        slide: {
+          '0%': { transform: 'translateX(-100%)' },
+          '50%': { transform: 'translateX(100%)' },
+          '100%': { transform: 'translateX(-100%)' },
+        },
+      },
+      animation: {
+        slide: 'slide 2s ease-in-out infinite',
+      },
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
       },

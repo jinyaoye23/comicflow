@@ -9,6 +9,7 @@ export function ProjectCreatePage() {
   const [title, setTitle] = useState('');
   const [genre, setGenre] = useState('');
   const [style, setStyle] = useState('日系少年');
+  const [scriptType, setScriptType] = useState<'COMIC' | 'VIDEO'>('COMIC');
   const [creating, setCreating] = useState(false);
 
   const { data: projects, isLoading } = useQuery({
@@ -17,7 +18,7 @@ export function ProjectCreatePage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createProject({ title: title || '未命名项目', genre: genre || undefined, style }),
+    mutationFn: () => createProject({ title: title || '未命名项目', genre: genre || undefined, style, scriptType }),
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       navigate(`/project/${project.id}`);
@@ -36,17 +37,21 @@ export function ProjectCreatePage() {
     createMutation.mutate();
   };
 
-  const styles = ['日系少年', '日系少女', '美漫', '水墨', '赛博朋克', '萌系', '复古', '极简'];
+  const styles = scriptType === 'VIDEO'
+    ? ['电影感', '新海诚清新风', '赛博朋克', '吉卜力童话', '国风水墨', '好莱坞']
+    : ['日系少年', '日系少女', '美漫', '水墨', '赛博朋克', '萌系', '复古', '极简'];
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-12">
       {/* Hero */}
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold text-gray-900 mb-3">
-          用 AI 创作你的漫画
+          用 AI 创作你的{scriptType === 'VIDEO' ? '视频' : '漫画'}
         </h1>
         <p className="text-lg text-gray-500 max-w-lg mx-auto">
-          输入一个想法，AI 自动完成脚本 → 角色 → 分镜 → 视频，一条龙创作。
+          {scriptType === 'VIDEO'
+            ? '输入一个想法，AI 自动完成视频脚本 → 故事板分镜 → AI 视频生成。'
+            : '输入一个想法，AI 自动完成脚本 → 角色 → 分镜 → 视频，一条龙创作。'}
         </p>
       </div>
 
@@ -54,6 +59,38 @@ export function ProjectCreatePage() {
       <form onSubmit={handleCreate} className="card p-6 mb-10">
         <h2 className="text-lg font-semibold mb-4">创建新项目</h2>
         <div className="space-y-4">
+          {/* Script Type Toggle */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">项目类型</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setScriptType('COMIC'); setStyle('日系少年'); }}
+                className={`flex-1 py-3 px-4 rounded-lg border-2 text-sm font-medium transition-all ${
+                  scriptType === 'COMIC'
+                    ? 'border-accent-500 bg-accent-50 text-accent-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                <div className="text-lg mb-0.5">📖</div>
+                漫画创作
+                <div className="text-xs font-normal text-gray-400 mt-0.5">对话气泡 + 角色分镜</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setScriptType('VIDEO'); setStyle('电影感'); }}
+                className={`flex-1 py-3 px-4 rounded-lg border-2 text-sm font-medium transition-all ${
+                  scriptType === 'VIDEO'
+                    ? 'border-accent-500 bg-accent-50 text-accent-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                <div className="text-lg mb-0.5">🎬</div>
+                视频创作
+                <div className="text-xs font-normal text-gray-400 mt-0.5">故事板 + AI 文生视频</div>
+              </button>
+            </div>
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">项目名称</label>
             <input
@@ -146,8 +183,13 @@ export function ProjectCreatePage() {
                 </div>
                 <div className="flex items-center gap-1.5 mt-3">
                   <StatusBadge status={p.status} />
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                    p.scriptType === 'VIDEO' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
+                  }`}>
+                    {p.scriptType === 'VIDEO' ? '🎬 视频' : '📖 漫画'}
+                  </span>
                   <span className="text-xs text-gray-400">
-                    {p.panels?.length || 0} 格 · {p.characters?.length || 0} 角色
+                    {p.panels?.length || 0} {p.scriptType === 'VIDEO' ? '场景' : '格'} · {p.characters?.length || 0} 角色
                   </span>
                 </div>
               </div>

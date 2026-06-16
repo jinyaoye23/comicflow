@@ -41,3 +41,32 @@
            outline-none transition-all duration-150;
   }
 }
+
+/* Toast 滑入动画 */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* 骨架屏闪烁动画 */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+
+/* 分镜生成脉冲动画 — 给格子的 "生成中" 状态 */
+@keyframes panelPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.3); }
+  50%      { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); }
+}
+
+.panel-generating {
+  animation: panelPulse 2s ease-in-out infinite;
+}

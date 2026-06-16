@@ -26,9 +26,12 @@ model Project {
   title      String
   genre      String?
   style      String?     // 漫画风格：日系/美漫/水墨/赛博等
+  scriptType String      @default("COMIC") // COMIC | VIDEO — 脚本类型
   idea       String?     // 用户输入的原始创意文本
   script     String?     // JSON string — 结构化脚本
-  status     String      @default("DRAFT") // DRAFT | GENERATING | COMPLETED | FAILED
+  status      String      @default("DRAFT") // DRAFT | GENERATING | COMPLETED | FAILED
+  videoTaskId  String?     // Agnes 视频任务 ID，用于跨页面恢复轮询
+  videoPrompt  String?     // 视频生成时使用的 prompt（用于展示和调试）
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   characters Character[]
   panels     Panel[]
@@ -51,14 +54,18 @@ model Panel {
   id        String   @id @default(uuid())
   projectId String
   index     Int
-  scene     String?  // 场景描述
-  action    String?  // 动作描述
-  dialogue  String?  // 台词
-  camera    String?  // 镜头角度
-  prompt    String?  // 拼接后的完整生成 prompt
-  imagePath String?  // 生成的图片本地路径
-  videoPath String?  // 生成的视频本地路径
-  charIds   String?  // JSON array — 绑定的角色 ID 列表
+  scene        String?  // 场景描述（画面）
+  action       String?  // 动作描述
+  dialogue     String?  // 台词（漫画气泡中的对话文本）
+  camera       String?  // 镜头描述（景别+角度）
+  subtitle     String?  // 字幕（屏幕覆盖文字）
+  innerThought String?  // 内心OS（角色内心独白）
+  emotion      String?  // 情绪/笑点（情感基调和喜剧元素）
+  soundEffect  String?  // 音效（配乐/音效提示）
+  prompt       String?  // 拼接后的完整生成 prompt
+  imagePath    String?  // 生成的图片本地路径
+  videoPath    String?  // 生成的视频本地路径
+  charIds      String?  // JSON array — 绑定的角色 ID 列表
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, index])
